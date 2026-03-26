@@ -3,6 +3,8 @@ import { Card, CardHeader, CardTitle } from './ui/card'
 import { cn } from '../lib/utils'
 import { usePanelContext } from '../contexts/PanelContext'
 import cityKPIData from '../data/cityKPIData'
+import PerformanceDetailModal from './PerformanceDetailModal'
+import { generatePerformanceModalData } from '../utils/performanceAnalytics'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 
@@ -62,6 +64,7 @@ const CustomTooltip = ({ active, payload }) => {
 
 export default function CityKPICards() {
   const [activeCard, setActiveCard] = useState(null)
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false)
   const [trend14DayData, setTrend14DayData] = useState([])
   const { 
     selectedCity, 
@@ -69,7 +72,6 @@ export default function CityKPICards() {
     selectedDate, 
     selectedYear, 
     healthOverdoseData,
-    setCurrentView
   } = usePanelContext()
   const cards = cityKPIData[selectedCity] ?? cityKPIData.stl
   const trendCacheRef = useRef({})
@@ -233,10 +235,15 @@ export default function CityKPICards() {
     return card
   })
 
+  const performanceModalData = useMemo(() => {
+    if (selectedCity !== 'baltimore' || !baltimore311Data) return null
+    return generatePerformanceModalData(selectedDate, baltimore311Data, healthOverdoseData)
+  }, [selectedCity, selectedDate, baltimore311Data, healthOverdoseData])
+
   // Handle card click - only performance card is clickable for Baltimore
   const handleCardClick = (card) => {
     if (card.id === 'performance' && selectedCity === 'baltimore' && baltimore311Data) {
-      setCurrentView('performance')
+      setIsPerformanceModalOpen(true)
     }
   }
 
@@ -355,6 +362,11 @@ export default function CityKPICards() {
         )
       })}
     </div>
+    <PerformanceDetailModal
+      isOpen={isPerformanceModalOpen}
+      onClose={() => setIsPerformanceModalOpen(false)}
+      data={performanceModalData}
+    />
   </>
   )
 }

@@ -17,7 +17,7 @@ export default function LeftNav() {
       id: 'performance',
       icon: Activity,
       label: 'City Performance & Reliability',
-      enabled: true
+      enabled: false
     },
     {
       id: 'work-orders',
