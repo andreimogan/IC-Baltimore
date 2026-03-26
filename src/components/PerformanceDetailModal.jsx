@@ -69,9 +69,9 @@ export default function PerformanceDetailModal({ isOpen, onClose, data }) {
 
       {/* Modal */}
       <div
-        className="fixed z-50 rounded-[14px] border shadow-2xl overflow-y-auto"
+        className="fixed z-50 rounded-[14px] border shadow-2xl overflow-y-auto overflow-x-hidden"
         style={{
-          width: '900px',
+          width: 'min(900px, calc(100vw - 32px))',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
@@ -82,7 +82,7 @@ export default function PerformanceDetailModal({ isOpen, onClose, data }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-col gap-3 p-4" style={{ width: '900px' }}>
+        <div className="flex flex-col gap-3 p-4" style={{ width: '100%' }}>
           {/* Header */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between w-full">
