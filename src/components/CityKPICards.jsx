@@ -259,16 +259,22 @@ export default function CityKPICards() {
               key={card.id}
               className={cn(
                 "text-left w-full flex-1 min-h-0 flex flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 rounded-[14px]",
-                clickable && "cursor-pointer"
+                clickable ? "cursor-pointer" : "cursor-not-allowed"
               )}
-              onClick={() => handleCardClick(card)}
+              onClick={() => {
+                if (!clickable) return
+                handleCardClick(card)
+              }}
+              aria-disabled={!clickable}
             >
             <Card
               className={cn(
                 'w-full flex-1 flex flex-col transition-all duration-200 border',
                 isActive
                   ? 'border-white/20'
-                  : 'border-white/10 hover:border-white/20',
+                  : clickable
+                    ? 'border-white/10 hover:border-white/20'
+                    : 'border-white/10',
               )}
               style={{
                 background: isActive

@@ -17,6 +17,95 @@ const MAPTILER_API_KEY = 'X1kjwlVN29N1UZItdixx'
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVpbW9nYW4iLCJhIjoiY21uNDdoanI4MTgxcjJycGR4a2xxc3RyNSJ9.atvOuDPanicP6gd21D9ExQ'
 const MAPBOX_STYLE = 'mapbox://styles/andreimogan/cmn47nl5v004t01r4db5b1npe?fresh=true'
 
+function createZoomPercentControl({ minZoom = 8, maxZoom = 18, maxPercent = 200 } = {}) {
+  let map = null
+  let container = null
+  let percentLabel = null
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+  const zoomToPercent = (zoom) => {
+    const ratio = (zoom - minZoom) / Math.max(0.0001, (maxZoom - minZoom))
+    return Math.round(clamp(ratio, 0, 1) * maxPercent)
+  }
+  const percentToZoom = (percent) => {
+    const ratio = clamp(percent, 0, maxPercent) / maxPercent
+    return minZoom + ratio * (maxZoom - minZoom)
+  }
+
+  const syncPercentFromMap = () => {
+    if (!map || !percentLabel) return
+    percentLabel.textContent = `${zoomToPercent(map.getZoom())}%`
+  }
+
+  return {
+    onAdd(nextMap) {
+      map = nextMap
+      container = document.createElement('div')
+      container.className = 'maplibregl-ctrl custom-zoom-control'
+
+      const makeButton = (label, ariaLabel, onClick, extraClass = '') => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = `custom-zoom-control__btn ${extraClass}`.trim()
+        button.setAttribute('aria-label', ariaLabel)
+        button.textContent = label
+        button.addEventListener('click', onClick)
+        return button
+      }
+
+      const zoomButton = document.createElement('button')
+      zoomButton.type = 'button'
+      zoomButton.className = 'custom-zoom-control__value-wrap'
+      zoomButton.setAttribute('aria-label', 'Set zoom percent')
+
+      percentLabel = document.createElement('span')
+      percentLabel.className = 'custom-zoom-control__label'
+      percentLabel.textContent = `${zoomToPercent(map.getZoom())}%`
+
+      const setPercent = (value) => {
+        if (!map) return
+        const parsed = Number(value)
+        if (Number.isNaN(parsed)) {
+          syncPercentFromMap()
+          return
+        }
+        const clampedPercent = clamp(Math.round(parsed), 0, maxPercent)
+        map.easeTo({ zoom: percentToZoom(clampedPercent) })
+      }
+
+      zoomButton.addEventListener('click', () => {
+        const currentPercent = zoomToPercent(map.getZoom())
+        const raw = window.prompt('Set zoom percent (0-200)', String(currentPercent))
+        if (raw === null) return
+        setPercent(raw)
+      })
+
+      const zoomOutButton = makeButton('−', 'Zoom out', () => map?.easeTo({ zoom: map.getZoom() - 1 }))
+      const zoomInButton = makeButton('+', 'Zoom in', () => map?.easeTo({ zoom: map.getZoom() + 1 }))
+
+      zoomButton.appendChild(percentLabel)
+
+      container.appendChild(zoomButton)
+      container.appendChild(zoomOutButton)
+      container.appendChild(zoomInButton)
+
+      map.on('zoom', syncPercentFromMap)
+      return container
+    },
+    onRemove() {
+      if (map) {
+        map.off('zoom', syncPercentFromMap)
+      }
+      if (container?.parentNode) {
+        container.parentNode.removeChild(container)
+      }
+      map = null
+      container = null
+      percentLabel = null
+    },
+  }
+}
+
 // ArcGIS Feature Service URL pattern for Baltimore 311 by year
 // Now accepts an optional endDate parameter to filter on the server side
 const get311ServiceUrl = (year, endDate = null) => {
@@ -65,6 +154,8 @@ export default function MapView() {
     selectedDate, 
     setBaltimore311Data, 
     setBaltimore311DataYear, 
+    mapFocusRequest,
+    mapPopupRequest,
     heatmapConfig,
     healthOverdoseVisible,
     healthNaloxoneVisible,
@@ -84,6 +175,43 @@ export default function MapView() {
   // Cache fetched 311 GeoJSON per year+date combination to avoid redundant requests
   // Key format: "YYYY-MM-DD" for specific dates, or "YYYY" for year-end
   const baltimore311Cache = useRef({})
+
+  const create311PopupHtml = (properties = {}) => {
+    const { SRType, Address, SRStatus, CreatedDate, CloseDate, Agency, Neighborhood } = properties
+    const asOfDate = new Date(selectedDate)
+    asOfDate.setHours(23, 59, 59, 999)
+    const asOfTime = asOfDate.getTime()
+
+    let historicalStatus = 'Open'
+    if (CloseDate && CloseDate <= asOfTime) {
+      historicalStatus = 'Closed'
+    }
+
+    return `
+      <div style="font-size:13px;line-height:1.5;color:rgba(255,255,255,0.9);min-width:200px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:6px">311 Service Request</div>
+        <div style="font-weight:600;font-size:14px;color:#fff;margin-bottom:6px;line-height:1.3">${SRType || 'Service Request'}</div>
+        ${Address ? `
+          <div style="color:rgba(255,255,255,0.6);font-size:12px;margin-bottom:2px">${Address}${Neighborhood ? `<span style="color:rgba(255,255,255,0.35)"> · ${Neighborhood}</span>` : ''}</div>
+        ` : ''}
+        ${Agency ? `
+          <div style="color:rgba(255,255,255,0.4);font-size:12px;margin-bottom:6px">${Agency}</div>
+        ` : ''}
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08)">
+          <span style="
+            display:inline-flex;align-items:center;gap:4px;
+            padding:2px 8px;border-radius:5px;font-size:11px;font-weight:500;
+            background:${historicalStatus === 'Open' ? 'rgba(249,115,22,0.15)' : 'rgba(127,190,72,0.15)'};
+            color:${historicalStatus === 'Open' ? '#fb923c' : '#86efac'};
+            border:1px solid ${historicalStatus === 'Open' ? 'rgba(249,115,22,0.35)' : 'rgba(127,190,72,0.35)'};
+          ">
+            <span style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block"></span>
+            ${historicalStatus}
+          </span>
+        </div>
+      </div>
+    `
+  }
 
   const cityConfig = {
     stl: { center: [-90.1994, 38.6270], zoom: 11 },
@@ -167,8 +295,8 @@ export default function MapView() {
       })
 
       map.current.addControl(
-        new mapgl.NavigationControl({ showCompass: false, showZoom: true, visualizePitch: false }),
-        'top-right'
+        createZoomPercentControl({ minZoom: 8, maxZoom: 18, maxPercent: 200 }),
+        'bottom-right'
       )
 
       map.current.on('load', () => {
@@ -450,47 +578,14 @@ export default function MapView() {
       const showPointPopup = (e) => {
         const feature = e.features[0]
         const coords = feature.geometry.coordinates.slice()
-        const { SRType, Address, SRStatus, CreatedDate, CloseDate, Agency, Neighborhood } = feature.properties
-        
-        // Calculate historical status based on selectedDate
-        const asOfDate = new Date(selectedDate)
-        asOfDate.setHours(23, 59, 59, 999)
-        const asOfTime = asOfDate.getTime()
-        
-        let historicalStatus = 'Open' // Default
-        if (CloseDate && CloseDate <= asOfTime) {
-          historicalStatus = 'Closed'
-        }
+        const properties = feature.properties || {}
         
         while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
           coords[0] += e.lngLat.lng > coords[0] ? 360 : -360
         }
         new mapLib.current.Popup({ closeButton: true, maxWidth: '280px', className: 'popup-311' })
           .setLngLat(coords)
-          .setHTML(`
-            <div style="font-size:13px;line-height:1.5;color:rgba(255,255,255,0.9);min-width:200px">
-              <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:6px">311 Service Request</div>
-              <div style="font-weight:600;font-size:14px;color:#fff;margin-bottom:6px;line-height:1.3">${SRType || 'Service Request'}</div>
-              ${Address ? `
-                <div style="color:rgba(255,255,255,0.6);font-size:12px;margin-bottom:2px">${Address}${Neighborhood ? `<span style="color:rgba(255,255,255,0.35)"> · ${Neighborhood}</span>` : ''}</div>
-              ` : ''}
-              ${Agency ? `
-                <div style="color:rgba(255,255,255,0.4);font-size:12px;margin-bottom:6px">${Agency}</div>
-              ` : ''}
-              <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08)">
-                <span style="
-                  display:inline-flex;align-items:center;gap:4px;
-                  padding:2px 8px;border-radius:5px;font-size:11px;font-weight:500;
-                  background:${historicalStatus === 'Open' ? 'rgba(249,115,22,0.15)' : 'rgba(127,190,72,0.15)'};
-                  color:${historicalStatus === 'Open' ? '#fb923c' : '#86efac'};
-                  border:1px solid ${historicalStatus === 'Open' ? 'rgba(249,115,22,0.35)' : 'rgba(127,190,72,0.35)'};
-                ">
-                  <span style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block"></span>
-                  ${historicalStatus}
-                </span>
-              </div>
-            </div>
-          `)
+          .setHTML(create311PopupHtml(properties))
           .addTo(map.current)
       }
       map.current.on('click', 'baltimore-311-unclustered', showPointPopup)
@@ -760,6 +855,38 @@ export default function MapView() {
       essential: true
     })
   }, [selectedCity, mapEngine, mapLoaded])
+
+  // Focus requests from other views (e.g. Work Orders "Go To Map")
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !mapFocusRequest) return
+    const { lng, lat, zoom } = mapFocusRequest
+    if (typeof lng !== 'number' || typeof lat !== 'number') return
+
+    map.current.flyTo({
+      center: [lng, lat],
+      zoom: zoom || Math.max(map.current.getZoom(), 14),
+      duration: 1200,
+      essential: true,
+    })
+  }, [mapFocusRequest, mapLoaded])
+
+  // Popup requests from other views (e.g. Work Orders "Go To Map")
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !mapPopupRequest || !mapLib.current) return
+    const { lng, lat, properties } = mapPopupRequest
+    if (typeof lng !== 'number' || typeof lat !== 'number') return
+
+    const openPopup = () => {
+      new mapLib.current.Popup({ closeButton: true, maxWidth: '280px', className: 'popup-311' })
+        .setLngLat([lng, lat])
+        .setHTML(create311PopupHtml(properties || {}))
+        .addTo(map.current)
+    }
+
+    // Small delay lets map transition start/complete for better UX
+    const timer = setTimeout(openPopup, 350)
+    return () => clearTimeout(timer)
+  }, [mapPopupRequest, mapLoaded, selectedDate])
 
   // Update 311 layer colors in real-time when color settings change
   useEffect(() => {

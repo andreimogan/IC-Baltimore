@@ -147,6 +147,7 @@ export default function WaterOSCopilotPanel() {
     copilotVisible,
     setCopilotVisible,
     addSuccessNotification,
+    createWorkOrder,
     sendUserMessage,
     isAiResponding,
     aiError,
@@ -165,6 +166,7 @@ export default function WaterOSCopilotPanel() {
   
   // Input state for chat
   const [inputText, setInputText] = useState('')
+  const [customPlanStepInputs, setCustomPlanStepInputs] = useState({})
   
   // Count event context messages
   const eventContextMessages = chatMessages.filter(msg => msg.type === 'event-context')
@@ -295,6 +297,80 @@ export default function WaterOSCopilotPanel() {
       setChatMessages((prev) => [...prev, impactAnalysisMessage])
     }
   }
+
+  const updateActionPlanMessage = (messageId, updates) => {
+    setChatMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, ...updates } : msg))
+    )
+  }
+
+  const handleRemovePlanStep = (messageId, stepId) => {
+    setChatMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg
+        const current = msg.removedStepIds || []
+        if (current.includes(stepId)) return msg
+        return { ...msg, removedStepIds: [...current, stepId] }
+      })
+    )
+  }
+
+  const handleAddCustomPlanStep = (messageId) => {
+    const input = (customPlanStepInputs[messageId] || '').trim()
+    if (!input) return
+    setChatMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg
+        const customSteps = msg.customSteps || []
+        return {
+          ...msg,
+          customSteps: [
+            ...customSteps,
+            { id: `custom-${Date.now()}`, text: input, source: 'custom' },
+          ],
+        }
+      })
+    )
+    setCustomPlanStepInputs((prev) => ({ ...prev, [messageId]: '' }))
+  }
+
+  const handleApprovePlan = (message) => {
+    if (message.approvedAction) return
+
+    const baseSteps = message.context?.steps || []
+    const removedIds = message.removedStepIds || []
+    const customSteps = message.customSteps || []
+    const approvedSteps = [...baseSteps.filter((s) => !removedIds.includes(s.id)), ...customSteps]
+
+    if (message.context?.workOrderStrategy === 'single') {
+      createWorkOrder({
+        type: message.context?.title || 'AI Recommended Action',
+        priority: 'High',
+        status: 'New',
+        location: message.context?.locationHint || 'City Priority Zone',
+        instructions: message.context?.description || 'Execute approved action plan steps.',
+        actionItems: approvedSteps.map((step) => step.text),
+        updatedAt: new Date().toISOString(),
+      })
+      addSuccessNotification('Work order created with plan checklist')
+    } else {
+      approvedSteps.forEach((step, idx) => {
+        createWorkOrder({
+          type: message.context?.title || 'AI Recommended Action',
+          priority: 'High',
+          status: 'New',
+          location: message.context?.locationHint || 'City Priority Zone',
+          instructions: step.text,
+          actionItems: [step.text],
+          updatedAt: new Date().toISOString(),
+        })
+        addSuccessNotification(`Work order created: Step ${idx + 1}`)
+      })
+    }
+
+    updateActionPlanMessage(message.id, { approvedAction: true })
+    addSuccessNotification('AI action plan approved and work orders created')
+  }
   
   // Handle sending user chat messages
   const handleSendMessage = async () => {
@@ -325,7 +401,7 @@ export default function WaterOSCopilotPanel() {
     <div
       className="rounded-xl border fixed shadow-xl overflow-hidden flex flex-col z-40"
       role="region"
-      aria-label="Water OS Copilot"
+      aria-label="Sand Intelligence Assistant"
       style={{
         top: `${position.y}px`,
         left: `${position.x}px`,
@@ -361,7 +437,7 @@ export default function WaterOSCopilotPanel() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold leading-tight truncate" style={{ color: 'var(--color-gray-100)' }}>
-                Water OS Copilot
+                Sand Intelligence Assistant
               </h2>
             </div>
           </div>
@@ -415,20 +491,16 @@ export default function WaterOSCopilotPanel() {
           Chat
         </button>
         <button
-          onClick={() => {
-            setActiveTab('intelligence')
-            if (hasUnreadIntelligence) {
-              clearIntelligenceNotification()
-            }
-          }}
+          type="button"
+          disabled
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 font-medium transition-colors relative"
           style={{
             fontSize: 'var(--text-xs)',
-            color: activeTab === 'intelligence' ? 'var(--sand-teal)' : 'var(--color-gray-400)',
-            borderBottom: activeTab === 'intelligence' ? '2px solid var(--sand-teal)' : '2px solid transparent',
+            color: 'var(--color-gray-500)',
+            borderBottom: '2px solid transparent',
+            opacity: 0.55,
+            cursor: 'not-allowed',
           }}
-          onMouseEnter={(e) => { if (activeTab !== 'intelligence') e.currentTarget.style.color = 'var(--color-gray-100)' }}
-          onMouseLeave={(e) => { if (activeTab !== 'intelligence') e.currentTarget.style.color = 'var(--color-gray-400)' }}
         >
           <Lightbulb className="w-3.5 h-3.5" aria-hidden="true" />
           Intelligence
@@ -440,15 +512,16 @@ export default function WaterOSCopilotPanel() {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('briefing')}
+          type="button"
+          disabled
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 font-medium transition-colors"
           style={{
             fontSize: 'var(--text-xs)',
-            color: activeTab === 'briefing' ? 'var(--sand-teal)' : 'var(--color-gray-400)',
-            borderBottom: activeTab === 'briefing' ? '2px solid var(--sand-teal)' : '2px solid transparent',
+            color: 'var(--color-gray-500)',
+            borderBottom: '2px solid transparent',
+            opacity: 0.55,
+            cursor: 'not-allowed',
           }}
-          onMouseEnter={(e) => { if (activeTab !== 'briefing') e.currentTarget.style.color = 'var(--color-gray-100)' }}
-          onMouseLeave={(e) => { if (activeTab !== 'briefing') e.currentTarget.style.color = 'var(--color-gray-400)' }}
         >
           <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />
           Briefing
@@ -472,7 +545,7 @@ export default function WaterOSCopilotPanel() {
                     Send event context from the Event Affected Area panel to start
                   </p>
                 </div>
-              ) : contextCount === 1 ? (
+              ) : contextCount <= 1 ? (
                 /* Single context - vertical full card */
                 chatMessages.map((message) => (
                     <div key={message.id}>
@@ -785,6 +858,107 @@ export default function WaterOSCopilotPanel() {
                             </>
                           )
                         })()
+                      ) : message.type === 'action-plan-context' ? (
+                        <div
+                          className="rounded-lg border p-3 mb-3"
+                          style={{
+                            backgroundColor: 'var(--color-gray-700)',
+                            borderColor: message.approvedAction ? 'rgba(34,197,94,0.45)' : 'rgba(96,165,250,0.35)',
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#93c5fd' }}>
+                                AI Enhanced Recommended Action
+                              </p>
+                              <p className="text-sm font-semibold mt-0.5" style={{ color: 'var(--color-gray-100)' }}>
+                                {message.context?.title}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => deleteMessage(message.id)}
+                              className="inline-flex items-center justify-center rounded-md h-6 w-6 transition-colors shrink-0"
+                              style={{ color: 'var(--color-gray-400)' }}
+                              title="Remove context"
+                            >
+                              <X className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                          <p className="text-xs mb-3" style={{ color: 'var(--color-gray-300)', lineHeight: 1.5 }}>
+                            {message.context?.description}
+                          </p>
+                          <div className="space-y-1.5 mb-2">
+                            {[...(message.context?.steps || []), ...(message.customSteps || [])]
+                              .filter((step) => !(message.removedStepIds || []).includes(step.id))
+                              .map((step, idx) => (
+                                <div
+                                  key={step.id}
+                                  className="flex items-center justify-between gap-2 rounded px-2 py-1.5"
+                                  style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                                >
+                                  <span className="text-xs" style={{ color: 'var(--color-gray-200)' }}>
+                                    {idx + 1}. {step.text}
+                                  </span>
+                                  {!message.approvedAction && (
+                                    <button
+                                      onClick={() => handleRemovePlanStep(message.id, step.id)}
+                                      className="text-[10px] px-2 py-0.5 rounded border"
+                                      style={{ borderColor: 'var(--color-gray-500)', color: 'var(--color-gray-400)' }}
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                          {!message.approvedAction && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={customPlanStepInputs[message.id] || ''}
+                                onChange={(e) =>
+                                  setCustomPlanStepInputs((prev) => ({ ...prev, [message.id]: e.target.value }))
+                                }
+                                placeholder="Add custom step..."
+                                className="flex-1 rounded px-2 py-1.5 text-xs border"
+                                style={{
+                                  backgroundColor: 'var(--color-gray-800)',
+                                  borderColor: 'var(--color-gray-600)',
+                                  color: 'var(--color-gray-100)',
+                                }}
+                              />
+                              <button
+                                onClick={() => handleAddCustomPlanStep(message.id)}
+                                className="px-2 py-1.5 rounded text-xs font-semibold border"
+                                style={{ borderColor: 'var(--color-gray-500)', color: 'var(--color-gray-200)' }}
+                              >
+                                Add
+                              </button>
+                            </div>
+                          )}
+                          <div className="inline-ai-message ai" style={{ marginTop: 0 }}>
+                            <div className="inline-ai-avatar">
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="inline-ai-message-content">
+                              {message.approvedAction ? (
+                                <p>Plan approved. Work orders were created from the selected steps.</p>
+                              ) : (
+                                <>
+                                  <p>Approve this plan to create work orders from the selected steps.</p>
+                                  <div className="inline-ai-actions">
+                                    <button
+                                      onClick={() => handleApprovePlan(message)}
+                                      className="inline-ai-btn inline-ai-btn-approve"
+                                    >
+                                      Approve Plan
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ) : message.type === 'event-context' ? (
                       <div className="space-y-3">
                         {/* Event context card */}
@@ -2019,7 +2193,7 @@ export default function WaterOSCopilotPanel() {
               </div>
               <div>
                 <h3 className="text-sm font-semibold leading-tight" style={{ color: 'var(--color-gray-100)' }}>
-                  Water OS Copilot
+                  Sand Intelligence Assistant
                 </h3>
                 <p className="leading-tight" style={{ fontSize: '11px', color: 'var(--color-gray-400)' }}>
                   Burst detection wiki & operational assistant

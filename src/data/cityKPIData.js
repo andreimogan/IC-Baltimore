@@ -14,7 +14,7 @@ const cityKPIData = {
       metric: '~20k',
       metricSuffix: 'residents at risk',
       description: 'within next 30 days if no action is taken',
-      badge: { label: 'Watch out · Critical priority', variant: 'yellow' },
+      badge: { label: 'Intervention needed · Critical', variant: 'red' },
     },
     {
       id: 'economic',
@@ -41,7 +41,7 @@ const cityKPIData = {
       metric: 'dynamic', // Will be calculated from 311 data
       metricSuffix: 'residents impacted',
       description: 'from currently open service requests',
-      badge: { label: 'TBD', variant: 'red' },
+      badge: { label: 'Intervention needed · Critical', variant: 'red' },
     },
     {
       id: 'risk',
@@ -57,7 +57,7 @@ const cityKPIData = {
       metric: '~6k',
       metricSuffix: 'net residents out-migrated',
       description: 'over the last year eroding city income',
-      badge: { label: 'Intervention needed · Critical', variant: 'red' },
+      badge: { label: 'Watch out · Critical priority', variant: 'yellow' },
     },
     {
       id: 'capital',

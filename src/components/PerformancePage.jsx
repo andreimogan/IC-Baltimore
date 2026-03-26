@@ -1,14 +1,8 @@
-import { TrendingUp, TrendingDown, AlertTriangle, Users, Clock, Phone } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock3, Droplets, ShieldAlert, Waves } from 'lucide-react'
 import { usePanelContext } from '../contexts/PanelContext'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts'
 
 export default function PerformancePage({ data }) {
-  const { setCurrentView } = usePanelContext()
-
-  const formatNumber = (num) => {
-    if (num >= 1000) return `~${(num / 1000).toFixed(0)}k`
-    return `~${num}`
-  }
+  const { setCopilotVisible, setActiveTab, setChatMessages } = usePanelContext()
 
   if (!data) {
     return (
@@ -18,519 +12,301 @@ export default function PerformancePage({ data }) {
     )
   }
 
-  // Prepare chart data from the performance data
-  const topTypesChartData = data._debug?.topTypes?.map(type => ({
-    name: type.name.length > 30 ? type.name.substring(0, 27) + '...' : type.name,
-    count: type.count,
-    fullName: type.name
-  })) || []
-
-  const neighborhoodChartData = data._debug?.topNeighborhoods?.map(neighborhood => ({
-    name: neighborhood.name,
-    count: neighborhood.count
-  })) || []
-
-  // Generate mock trend data for call volume over time (last 14 days)
-  const callVolumeTrendData = Array.from({ length: 14 }, (_, i) => {
-    const date = new Date()
-    date.setDate(date.getDate() - (13 - i))
-    return {
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      calls: Math.floor(Math.random() * 50) + 20,
-      critical: Math.floor(Math.random() * 15) + 5
-    }
+  const topTypes = data._debug?.topTypes || []
+  const topNeighborhoods = data._debug?.topNeighborhoods || []
+  const now = new Date()
+  const asOfLabel = now.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   })
 
-  // Custom tooltip for charts
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload || !payload.length) return null
-    
-    return (
-      <div
-        className="rounded-lg border px-3 py-2 shadow-xl"
-        style={{
-          background: 'rgba(26, 29, 34, 0.98)',
-          backdropFilter: 'blur(12px)',
-          borderColor: 'var(--color-gray-700)',
-        }}
-      >
-        <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-gray-300)' }}>
-          {label}
-        </p>
-        {payload.map((entry, index) => (
-          <p key={index} className="text-xs" style={{ color: entry.color }}>
-            {entry.name}: {entry.value}
-          </p>
-        ))}
-      </div>
-    )
+  const formatResidents = (value) => {
+    if (value >= 1000) return `~${(value / 1000).toFixed(1)}k`
+    return `~${value}`
+  }
+
+  const kpis = [
+    {
+      label: 'Affected Residents',
+      value: formatResidents(data.residentsImpacted),
+      note: `Estimated currently impacted`,
+      accent: '#f97316',
+      icon: AlertTriangle,
+    },
+    {
+      label: 'Service Reliability',
+      value: `${Math.max(1, 100 - data.weekOverWeekPercent)}%`,
+      note: `Target: 95%`,
+      accent: '#f59e0b',
+      icon: CheckCircle2,
+    },
+    {
+      label: 'Avg Time to Resolution',
+      value: data.resolutionTimeSLA.replace('xSLA', 'x SLA'),
+      note: `Target: <= 1x SLA`,
+      accent: '#22c55e',
+      icon: Clock3,
+    },
+    {
+      label: 'Successful Call-outs',
+      value: `${Math.max(0, 100 - Math.round(data.signal311.wowPercent / 2))}%`,
+      note: `Target: 90%`,
+      accent: '#facc15',
+      icon: CheckCircle2,
+    },
+    {
+      label: 'Non-Revenue Water',
+      value: `${Math.min(40, 12 + Math.round(data.signal311.criticalCount / 2))}%`,
+      note: `Target: 18%`,
+      accent: '#f43f5e',
+      icon: Waves,
+    },
+    {
+      label: 'Avg Open Requests / Zone',
+      value: `${Math.max(1, Math.round((data._debug?.openRequestsCount || 0) / 12))}`,
+      note: `As of ${asOfLabel}`,
+      accent: '#60a5fa',
+      icon: Droplets,
+    },
+  ]
+
+  const attentionRows = [
+    {
+      item: `${data.currentImpact.summary}`,
+      type: 'Active Event',
+      detail: `${data.signal311.criticalCount} critical requests above 7 days open`,
+    },
+    ...(topNeighborhoods.slice(0, 2).map((n) => ({
+      item: `${n.name} - elevated service load`,
+      type: 'Early Warning',
+      detail: `${n.count} open requests concentrated in neighborhood`,
+    }))),
+    ...(topTypes.slice(0, 3).map((t) => ({
+      item: t.name,
+      type: 'Operations Watch',
+      detail: `${t.count} open items · prioritize 24-48h response`,
+    }))),
+  ].slice(0, 6)
+
+  const scheduleRows = [
+    { time: '06:00-08:00', activity: 'Valve Operation Check', location: topNeighborhoods[0]?.name || 'North Sector', status: 'On-track' },
+    { time: '08:00-12:00', activity: 'Crew Dispatch Window', location: topNeighborhoods[1]?.name || 'East Sector', status: 'In progress' },
+    { time: '09:00', activity: 'Daily Ops Briefing', location: 'Control Room', status: 'Complete' },
+    { time: '12:00-14:00', activity: 'Priority Work Orders', location: topNeighborhoods[2]?.name || 'West Sector', status: 'Active' },
+    { time: '14:00-17:00', activity: 'Catchment Review', location: 'Hydrology Desk', status: 'Planned' },
+  ]
+
+  const openAnalyzeStepsPlan = ({ title, description, locationHint, steps }) => {
+    const defaultSteps = steps && steps.length > 0
+      ? steps
+      : [
+          'Dispatch priority response crew to highest-impact zone',
+          'Validate root cause and isolate affected infrastructure',
+          'Coordinate traffic/safety controls for field operations',
+          'Issue resident communication and service restoration timeline',
+        ]
+
+    const planMessage = {
+      id: Date.now(),
+      type: 'action-plan-context',
+      timestamp: new Date(),
+      context: {
+        title: title || 'AI Enhanced Recommended Action',
+        description: description || 'Analyze and execute recommended response plan.',
+        economicPayoff: data.recommendation?.economicPayoff || '',
+        locationHint: locationHint || data._debug?.topNeighborhoods?.[0]?.name || 'City Priority Zone',
+        steps: defaultSteps.map((text, idx) => ({ id: `step-${idx + 1}`, text, source: 'recommended' })),
+      },
+      removedStepIds: [],
+      customSteps: [],
+      approvedAction: false,
+    }
+
+    setCopilotVisible(true)
+    setActiveTab('chat')
+    setChatMessages((prev) => [...prev, planMessage])
+  }
+
+  const handleAnalyzeSteps = () => {
+    const defaultSteps = [
+      'Dispatch priority response crew to highest-impact zone',
+      'Validate root cause and isolate affected infrastructure',
+      'Coordinate traffic/safety controls for field operations',
+      'Issue resident communication and service restoration timeline',
+    ]
+
+    openAnalyzeStepsPlan({
+      title: data.recommendation?.title || 'AI Enhanced Recommended Action',
+      description: data.recommendation?.description || 'Analyze and execute recommended response plan.',
+      locationHint: data._debug?.topNeighborhoods?.[0]?.name || 'City Priority Zone',
+      steps: defaultSteps,
+    })
   }
 
   return (
-    <div 
+    <div
       className="overflow-y-auto"
-      style={{ 
+      style={{
         backgroundColor: 'var(--content-bg)',
         marginLeft: '80px',
         marginTop: 'calc(var(--nav-height) + 16px)',
         height: 'calc(100vh - var(--nav-height) - 16px)',
       }}
     >
-      <div className="w-full px-8 py-8">
-        {/* Page Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-gray-100)' }}>
-              City Performance & Reliability
-            </h1>
-            <p className="text-sm" style={{ color: 'var(--color-gray-400)' }}>
-              Real-time monitoring and intervention dashboard
-            </p>
-          </div>
-          <span
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border"
-            style={{
-              background: 'rgba(220, 38, 38, 0.15)',
-              borderColor: 'rgba(220, 38, 38, 0.35)',
-              color: '#fca5a5',
-            }}
-          >
-            <AlertTriangle className="w-4 h-4" />
-            High Priority Intervention Needed
-          </span>
+      <div className="w-full px-8 py-6">
+        <div className="mb-5">
+          <p className="text-2xl font-bold mb-1" style={{ color: 'var(--color-gray-100)' }}>
+            City Performance & Reliability
+          </p>
         </div>
 
-        {/* Hero Metrics Grid */}
-        <div className="grid grid-cols-3 gap-6 mb-8">
-          {/* Residents Impacted - Featured */}
-          <div
-            className="col-span-1 p-6 rounded-[14px] border"
+        <div className="grid grid-cols-6 gap-3 mb-6">
+          {kpis.map((kpi) => {
+            const Icon = kpi.icon
+            return (
+              <div
+                key={kpi.label}
+                className="rounded-[10px] border px-3 py-2.5"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  borderColor: 'var(--color-gray-700)',
+                }}
+              >
+                <div className="h-1 w-8 rounded-full mb-2" style={{ background: kpi.accent, opacity: 0.9 }} />
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon className="w-3.5 h-3.5" style={{ color: 'var(--color-gray-400)' }} />
+                  <p className="text-[10px] uppercase tracking-wide truncate" style={{ color: 'var(--color-gray-500)' }}>
+                    {kpi.label}
+                  </p>
+                </div>
+                <p className="text-2xl font-bold leading-none mb-1" style={{ color: 'var(--color-gray-100)' }}>
+                  {kpi.value}
+                </p>
+                <p className="text-[10px]" style={{ color: 'var(--color-gray-500)' }}>
+                  {kpi.note}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-5 mb-5 rounded-[10px] border px-4 py-3 flex items-start gap-2.5" style={{ borderColor: 'rgba(220,38,38,0.32)', background: 'rgba(220,38,38,0.08)' }}>
+          <AlertTriangle className="w-4 h-4 mt-0.5" style={{ color: '#fca5a5' }} />
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#fca5a5' }}>
+              AI Enhanced Recommended Action
+            </p>
+            <p className="text-sm" style={{ color: 'var(--color-gray-200)' }}>
+              {data.recommendation.title} - {data.recommendation.description}
+            </p>
+          </div>
+          <button
+            className="px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors"
             style={{
-              backgroundColor: 'var(--sand-surface)',
+              borderColor: 'rgba(96,165,250,0.45)',
+              backgroundColor: 'rgba(59,130,246,0.16)',
+              color: '#93c5fd',
+            }}
+            onClick={handleAnalyzeSteps}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.25)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.16)' }}
+          >
+            Analyze Steps
+          </button>
+        </div>
+
+        <div className="rounded-[10px] border mb-5 overflow-hidden" style={{ borderColor: 'var(--color-gray-700)', background: 'rgba(255,255,255,0.02)' }}>
+          <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--color-gray-700)' }}>
+            <ShieldAlert className="w-4 h-4" style={{ color: '#fca5a5' }} />
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-gray-200)' }}>
+              Needs Attention
+            </p>
+            <span className="ml-auto text-[10px] px-2 py-0.5 rounded" style={{ color: '#fca5a5', background: 'rgba(220,38,38,0.14)' }}>
+              {attentionRows.length} items
+            </span>
+          </div>
+          <div
+            className="grid px-4 py-2 text-[10px] uppercase tracking-wide border-b"
+            style={{
               borderColor: 'var(--color-gray-700)',
+              color: 'var(--color-gray-500)',
+              gridTemplateColumns: '40px minmax(260px,2.4fr) minmax(150px,1.2fr) minmax(360px,2.8fr) minmax(160px,1.1fr)',
             }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <Users className="w-5 h-5" style={{ color: 'var(--color-gray-400)' }} />
-              <p className="text-sm font-medium" style={{ color: 'var(--color-gray-400)' }}>
-                Residents Impacted
-              </p>
-            </div>
-            <div className="flex items-end gap-3">
-              <span className="text-5xl font-bold" style={{ color: 'var(--color-gray-100)' }}>
-                {formatNumber(data.residentsImpacted)}
+            <span>#</span>
+            <span>Item</span>
+            <span>Type</span>
+            <span>Detail</span>
+            <span>Actions</span>
+          </div>
+          {attentionRows.map((row, index) => (
+            <div
+              key={`${row.item}-${index}`}
+              className="grid px-4 py-2 border-b text-xs items-center"
+              style={{
+                borderColor: index === attentionRows.length - 1 ? 'transparent' : 'var(--color-gray-700)',
+                gridTemplateColumns: '40px minmax(260px,2.4fr) minmax(150px,1.2fr) minmax(360px,2.8fr) minmax(160px,1.1fr)',
+              }}
+            >
+              <span className="pr-2" style={{ color: 'var(--color-gray-500)' }}>{index + 1}</span>
+              <span className="truncate pr-3 min-w-0" style={{ color: 'var(--color-gray-100)' }}>{row.item}</span>
+              <span className="truncate pr-2 min-w-0" style={{ color: 'var(--color-gray-300)' }}>{row.type}</span>
+              <span className="truncate pr-3 min-w-0" style={{ color: 'var(--color-gray-500)' }}>{row.detail}</span>
+              <span className="min-w-0">
+                <button
+                  type="button"
+                  className="text-[11px] underline underline-offset-2"
+                  style={{ color: 'var(--sand-teal)' }}
+                  onClick={() =>
+                    openAnalyzeStepsPlan({
+                      title: `Action Plan: ${row.item}`,
+                      description: `${row.type} - ${row.detail}`,
+                      locationHint: row.item.split(' - ')[0] || 'City Priority Zone',
+                      steps: [
+                        `Assign lead team for: ${row.item}`,
+                        `Validate field scope and urgency for ${row.type.toLowerCase()} case`,
+                        `Coordinate response sequencing based on: ${row.detail}`,
+                        'Publish execution update and monitor SLA progress',
+                      ],
+                    })
+                  }
+                >
+                  AI Analyze Steps
+                </button>
               </span>
-              <div
-                className="flex items-center justify-center w-10 h-10 rounded-full mb-1"
-                style={{ backgroundColor: 'rgba(220, 38, 38, 0.15)' }}
-              >
-                {data.trendDirection === 'up' ? (
-                  <TrendingUp className="w-6 h-6" style={{ color: '#fca5a5' }} />
-                ) : (
-                  <TrendingDown className="w-6 h-6" style={{ color: '#34d399' }} />
-                )}
-              </div>
             </div>
-          </div>
-
-          {/* Resolution Time */}
-          <div
-            className="p-6 rounded-[14px] border"
-            style={{
-              backgroundColor: 'var(--sand-surface)',
-              borderColor: 'var(--color-gray-700)',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-5 h-5" style={{ color: 'var(--color-gray-400)' }} />
-              <p className="text-sm font-medium" style={{ color: 'var(--color-gray-400)' }}>
-                Resolution Time
-              </p>
-            </div>
-            <p className="text-3xl font-bold" style={{ color: '#fca5a5' }}>
-              {data.resolutionTimeSLA}
-            </p>
-            <p className="text-xs mt-2" style={{ color: 'var(--color-gray-500)' }}>
-              Above service level agreement
-            </p>
-          </div>
-
-          {/* 311 Calls */}
-          <div
-            className="p-6 rounded-[14px] border"
-            style={{
-              backgroundColor: 'var(--sand-surface)',
-              borderColor: 'var(--color-gray-700)',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Phone className="w-5 h-5" style={{ color: 'var(--color-gray-400)' }} />
-              <p className="text-sm font-medium" style={{ color: 'var(--color-gray-400)' }}>
-                311 Calls
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {data.trendDirection === 'up' ? (
-                <TrendingUp className="w-5 h-5 text-red-400" />
-              ) : (
-                <TrendingDown className="w-5 h-5 text-green-400" />
-              )}
-              <p className="text-3xl font-bold" style={{ color: 'var(--color-gray-100)' }}>
-                {data.weekOverWeekPercent}%
-              </p>
-            </div>
-            <p className="text-xs mt-2" style={{ color: 'var(--color-gray-500)' }}>
-              Week-over-week change
-            </p>
-          </div>
+          ))}
         </div>
 
-        {/* Two Column Layout */}
-        <div className="grid grid-cols-3 gap-6">
-          {/* Left Column - Detailed Information */}
-          <div className="col-span-2 flex flex-col gap-6">
-            {/* Current Impact Alert */}
-            <div
-              className="p-6 rounded-[14px] border"
-              style={{
-                backgroundColor: 'rgba(220, 38, 38, 0.12)',
-                borderColor: 'rgba(220, 38, 38, 0.3)',
-              }}
-            >
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-6 h-6 flex-shrink-0 mt-1" style={{ color: '#fca5a5' }} />
-                <div>
-                  <h3 className="text-lg font-bold mb-3" style={{ color: '#fca5a5' }}>
-                    Current Situation
-                  </h3>
-                  <div className="text-sm leading-relaxed" style={{ color: '#fca5a5' }}>
-                    <p className="font-medium mb-3">
-                      {formatNumber(data.currentImpact.count)} residents are currently impacted by {data.currentImpact.summary}
-                    </p>
-                    <p className="font-medium">
-                      <span className="font-bold">{formatNumber(data.riskForecast.count)}</span>
-                      <span> residents will be exposed in the next 10 days {data.riskForecast.description}.</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Service Requests by Type - Horizontal Progress Bars */}
-            {topTypesChartData.length > 0 && (
-              <div
-                className="p-6 rounded-[14px] border"
-                style={{
-                  backgroundColor: 'var(--sand-surface)',
-                  borderColor: 'var(--color-gray-700)',
-                }}
-              >
-                <h3 className="text-lg font-semibold mb-5" style={{ color: 'var(--color-gray-100)' }}>
-                  Service Requests by Type
-                </h3>
-                <div className="flex flex-col gap-3">
-                  {topTypesChartData.map((type, index) => {
-                    const colors = ['#64748b', '#60a5fa', '#fbbf24', '#a78bfa', '#fca5a5']
-                    const color = colors[index % colors.length]
-                    const maxCount = Math.max(...topTypesChartData.map(t => t.count))
-                    const percentage = (type.count / maxCount) * 100
-                    
-                    return (
-                      <div key={type.name} className="flex items-center gap-3">
-                        <div className="flex-1 flex items-center gap-3">
-                          <div className="flex items-center gap-2 w-56 flex-shrink-0">
-                            <span className="text-sm" style={{ color: 'var(--color-gray-400)' }}>
-                              {type.name}
-                            </span>
-                          </div>
-                          <div className="flex-1 h-7 rounded-full overflow-hidden relative" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${percentage}%`,
-                                backgroundColor: color,
-                              }}
-                            />
-                          </div>
-                          <span className="text-sm font-semibold w-14 text-right" style={{ color: 'var(--color-gray-100)' }}>
-                            {type.count}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Total 311 Calls Trend - Area Chart */}
-            <div
-              className="p-6 rounded-[14px] border"
-              style={{
-                backgroundColor: 'var(--sand-surface)',
-                borderColor: 'var(--color-gray-700)',
-              }}
-            >
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--color-gray-400)' }}>
-                    Total 311 Calls
-                  </h3>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-bold" style={{ color: 'var(--color-gray-100)' }}>
-                      {data.signal311.totalCalls.toLocaleString()}
-                    </span>
-                    <span className="text-sm" style={{ color: 'var(--color-gray-500)' }}>
-                      in the last 7 days
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="px-3 py-1.5 rounded-md flex items-center gap-1.5"
-                  style={{
-                    backgroundColor: data.signal311.wowDirection === 'increase' 
-                      ? 'rgba(220, 38, 38, 0.15)' 
-                      : 'rgba(34, 197, 94, 0.15)',
-                    color: data.signal311.wowDirection === 'increase' ? '#fca5a5' : '#86efac',
-                  }}
-                >
-                  {data.signal311.wowDirection === 'increase' ? (
-                    <TrendingUp className="w-4 h-4" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4" />
-                  )}
-                  <span className="text-sm font-semibold">
-                    {data.signal311.wowPercent}% (+{Math.floor(data.signal311.totalCalls * data.signal311.wowPercent / 100)})
-                  </span>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-gray-100)' }}>
-                  Total 311 Calls Trend
-                </p>
-                <div style={{ width: '100%', height: '280px' }}>
-                  <ResponsiveContainer>
-                    <AreaChart data={callVolumeTrendData} margin={{ top: 10, right: 10, bottom: 20, left: -20 }}>
-                      <defs>
-                        <linearGradient id="callsAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.5} />
-                          <stop offset="100%" stopColor="#fbbf24" stopOpacity={0.05} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" vertical={false} />
-                      <XAxis 
-                        dataKey="date" 
-                        stroke="var(--color-gray-600)"
-                        style={{ fontSize: '11px' }}
-                        tick={{ fill: 'var(--color-gray-500)' }}
-                        axisLine={{ stroke: 'var(--color-gray-700)' }}
-                      />
-                      <YAxis 
-                        stroke="var(--color-gray-600)"
-                        style={{ fontSize: '11px' }}
-                        tick={{ fill: 'var(--color-gray-500)' }}
-                        axisLine={{ stroke: 'var(--color-gray-700)' }}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend 
-                        wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }}
-                        iconType="line"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="calls"
-                        stroke="#fbbf24"
-                        strokeWidth={2.5}
-                        fill="url(#callsAreaGradient)"
-                        name="311 Calls"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="critical"
-                        stroke="#60a5fa"
-                        strokeWidth={2}
-                        dot={{ r: 3, fill: '#60a5fa', strokeWidth: 0 }}
-                        name="Solved Cases"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Bottom stat cards - Top 3 categories */}
-              {topTypesChartData.length >= 3 && (
-                <div className="grid grid-cols-3 gap-4 pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  {topTypesChartData.slice(0, 3).map((type, index) => (
-                    <div key={type.name} className="flex flex-col">
-                      <span className="text-2xl font-bold mb-1" style={{ color: 'var(--color-gray-100)' }}>
-                        {type.count.toLocaleString()}
-                      </span>
-                      <span className="text-xs leading-tight" style={{ color: 'var(--color-gray-400)' }}>
-                        {type.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Neighborhood Impact - Kept as is */}
-            {neighborhoodChartData.length > 0 && (
-              <div
-                className="p-6 rounded-[14px] border"
-                style={{
-                  backgroundColor: 'var(--sand-surface)',
-                  borderColor: 'var(--color-gray-700)',
-                }}
-              >
-                <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-gray-100)' }}>
-                  Most Affected Neighborhoods
-                </h3>
-                <div style={{ width: '100%', height: '240px' }}>
-                  <ResponsiveContainer>
-                    <BarChart data={neighborhoodChartData} layout="vertical" margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-                      <XAxis 
-                        type="number"
-                        stroke="var(--color-gray-500)"
-                        style={{ fontSize: '11px', fill: 'var(--color-gray-500)' }}
-                        tick={{ fill: 'var(--color-gray-500)' }}
-                      />
-                      <YAxis 
-                        type="category"
-                        dataKey="name"
-                        stroke="var(--color-gray-500)"
-                        style={{ fontSize: '11px', fill: 'var(--color-gray-500)' }}
-                        tick={{ fill: 'var(--color-gray-500)' }}
-                        width={120}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar 
-                        dataKey="count" 
-                        fill="#fca5a5" 
-                        radius={[0, 6, 6, 0]}
-                        name="Open Cases"
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
+        <div className="rounded-[10px] border overflow-hidden" style={{ borderColor: 'var(--color-gray-700)', background: 'rgba(255,255,255,0.02)' }}>
+          <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--color-gray-700)' }}>
+            <Clock3 className="w-4 h-4" style={{ color: 'var(--color-gray-400)' }} />
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-gray-200)' }}>
+              Today&apos;s Schedule
+            </p>
           </div>
-
-          {/* Right Column - Actions & Impact */}
-          <div className="col-span-1 flex flex-col gap-6">
-            {/* Recommended Action & Impact Combined */}
-            <div
-              className="p-6 rounded-[14px] border"
-              style={{
-                backgroundColor: 'var(--sand-surface)',
-                borderColor: 'var(--color-gray-700)',
-              }}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-bold" style={{ color: 'var(--color-gray-100)' }}>
-                  Recommended Action
-                </h3>
-                <span
-                  className="text-xs px-2 py-1 rounded"
-                  style={{
-                    backgroundColor: 'rgba(220, 38, 38, 0.15)',
-                    color: '#fca5a5',
-                  }}
-                >
-                  Critical
-                </span>
-              </div>
-
-              <div className="mb-6">
-                <p className="text-base font-semibold mb-3" style={{ color: 'var(--color-gray-100)' }}>
-                  {data.recommendation.title}
-                </p>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-gray-400)' }}>
-                  {data.recommendation.description}
-                </p>
-              </div>
-
-              {/* Expected Impact section within same card */}
-              <div className="mb-6 pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                <h4 className="text-sm font-bold mb-3" style={{ color: 'var(--color-gray-100)' }}>
-                  Expected Impact
-                </h4>
-                <p className="text-sm leading-relaxed font-medium mb-4" style={{ color: '#34d399' }}>
-                  {data.recommendation.impact}
-                </p>
-
-                <div className="pt-3" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-gray-400)' }}>
-                    Economic Payoff
-                  </p>
-                  <p className="text-sm leading-relaxed">
-                    <span className="font-bold" style={{ color: '#34d399' }}>
-                      {data.recommendation.economicPayoff.split(' ')[0]} 
-                    </span>
-                    <span className="font-normal" style={{ color: 'var(--color-gray-300)' }}>
-                      {' ' + data.recommendation.economicPayoff.split(' ').slice(1).join(' ')}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3">
-                <button
-                  className="w-full px-4 py-3 rounded-md text-sm font-semibold transition-all"
-                  style={{
-                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                    color: '#60a5fa',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
-                  }}
-                >
-                  Authorize Intervention
-                </button>
-                <button
-                  className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-colors"
-                  style={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    color: 'var(--color-gray-200)',
-                    border: '1px solid var(--color-gray-700)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                  }}
-                >
-                  Assign to Division
-                </button>
-                <button
-                  className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-colors border"
-                  style={{
-                    backgroundColor: 'transparent',
-                    color: 'var(--color-gray-300)',
-                    borderColor: 'var(--color-gray-700)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent'
-                  }}
-                >
-                  See More Priority Items
-                </button>
-              </div>
-            </div>
+          <div className="grid grid-cols-12 px-4 py-2 text-[10px] uppercase tracking-wide border-b" style={{ borderColor: 'var(--color-gray-700)', color: 'var(--color-gray-500)' }}>
+            <span className="col-span-2">Time</span>
+            <span className="col-span-4">Activity</span>
+            <span className="col-span-3">Location</span>
+            <span className="col-span-3">Status</span>
           </div>
+          {scheduleRows.map((row, index) => (
+            <div
+              key={`${row.time}-${row.activity}-${index}`}
+              className="grid grid-cols-12 px-4 py-2 border-b text-xs"
+              style={{ borderColor: index === scheduleRows.length - 1 ? 'transparent' : 'var(--color-gray-700)' }}
+            >
+              <span className="col-span-2" style={{ color: 'var(--color-gray-300)' }}>{row.time}</span>
+              <span className="col-span-4" style={{ color: 'var(--color-gray-100)' }}>{row.activity}</span>
+              <span className="col-span-3 truncate pr-2" style={{ color: 'var(--color-gray-400)' }}>{row.location}</span>
+              <span className="col-span-3" style={{ color: 'var(--color-gray-500)' }}>{row.status}</span>
+            </div>
+          ))}
         </div>
+
       </div>
     </div>
   )

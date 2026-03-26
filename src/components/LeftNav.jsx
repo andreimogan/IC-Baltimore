@@ -1,4 +1,4 @@
-import { Map, Activity, TrendingUp, DollarSign, Building2, ChevronLeft } from 'lucide-react'
+import { Map, Activity, ClipboardList, TrendingUp, DollarSign, Building2, ChevronLeft } from 'lucide-react'
 import { usePanelContext } from '../contexts/PanelContext'
 
 const sandLogo = '/sand-logo.png'
@@ -17,6 +17,12 @@ export default function LeftNav() {
       id: 'performance',
       icon: Activity,
       label: 'City Performance & Reliability',
+      enabled: true
+    },
+    {
+      id: 'work-orders',
+      icon: ClipboardList,
+      label: 'Work Orders',
       enabled: true
     },
     {

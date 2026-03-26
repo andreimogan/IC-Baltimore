@@ -17,7 +17,9 @@ export const PanelProvider = ({ children }) => {
   const [layersVisible, setLayersVisible] = useState(false)
 
   // Navigation state
-  const [currentView, setCurrentView] = useState('map') // 'map' | 'performance' | 'risk' | 'economic' | 'capital'
+  const [currentView, setCurrentView] = useState('map') // 'map' | 'performance' | 'work-orders' | 'risk' | 'economic' | 'capital'
+  const [mapFocusRequest, setMapFocusRequest] = useState(null)
+  const [mapPopupRequest, setMapPopupRequest] = useState(null)
 
   // Copilot / AI chat state
   const [activeTab, setActiveTab] = useState('chat')
@@ -98,12 +100,46 @@ export const PanelProvider = ({ children }) => {
   const [intelligenceItems, setIntelligenceItems] = useState([])
   const [hasUnreadIntelligence, setHasUnreadIntelligence] = useState(false)
 
+  // Action panel (Alerts, Forecasting, Permits)
+  const [activeActionTab, setActiveActionTab] = useState(null) // 'alerts' | 'forecasting' | 'permits' | null
+  const [actionTabAnchor, setActionTabAnchor] = useState(null) // viewport rect for active action button
+  const [neighborhoodAlerts, setNeighborhoodAlerts] = useState(null) // Alert data grouped by severity
+  
+  // Forecasting data
+  const [potholeForecasts, setPotholeForecasts] = useState(null) // Pothole forecast data
+
+  // Work orders (imported/adapted from leakage prototype patterns)
+  const [workOrders, setWorkOrders] = useState([])
+
   const addIntelligenceItem = (item) => {
     setIntelligenceItems(prev => [...prev, { ...item, id: Date.now(), timestamp: new Date() }])
     setHasUnreadIntelligence(true)
   }
 
   const clearIntelligenceNotification = () => setHasUnreadIntelligence(false)
+
+  const createWorkOrder = (workOrderData) => {
+    const uniqueSuffix = Math.random().toString(36).slice(2, 7).toUpperCase()
+    const newWorkOrder = {
+      id: `WO-${Date.now()}-${uniqueSuffix}`,
+      status: 'New',
+      priority: 'Medium',
+      createdAt: new Date().toISOString(),
+      ...workOrderData,
+    }
+    setWorkOrders((prev) => [newWorkOrder, ...prev])
+    return newWorkOrder
+  }
+
+  const requestMapFocus = ({ lng, lat, zoom = 15 }) => {
+    if (typeof lng !== 'number' || typeof lat !== 'number') return
+    setMapFocusRequest({ lng, lat, zoom, timestamp: Date.now() })
+  }
+
+  const requestMapPopup = ({ lng, lat, properties }) => {
+    if (typeof lng !== 'number' || typeof lat !== 'number') return
+    setMapPopupRequest({ lng, lat, properties: properties || {}, timestamp: Date.now() })
+  }
 
   // Panel toggles
   const toggleCopilot = () => setCopilotVisible(prev => !prev)
@@ -160,6 +196,12 @@ export const PanelProvider = ({ children }) => {
     // Navigation
     currentView,
     setCurrentView,
+    mapFocusRequest,
+    setMapFocusRequest,
+    requestMapFocus,
+    mapPopupRequest,
+    setMapPopupRequest,
+    requestMapPopup,
 
     // City
     selectedCity,
@@ -242,6 +284,23 @@ export const PanelProvider = ({ children }) => {
     addIntelligenceItem,
     hasUnreadIntelligence,
     clearIntelligenceNotification,
+
+    // Action panel
+    activeActionTab,
+    setActiveActionTab,
+    actionTabAnchor,
+    setActionTabAnchor,
+    neighborhoodAlerts,
+    setNeighborhoodAlerts,
+    
+    // Forecasting
+    potholeForecasts,
+    setPotholeForecasts,
+
+    // Work orders
+    workOrders,
+    setWorkOrders,
+    createWorkOrder,
 
     // Notifications
     successNotifications,
